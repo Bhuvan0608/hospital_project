@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Register - Smart Hospital{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h1>Patient registration</h1>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <label>Full name
+      <input type="text" name="full_name" value="{{ form.get('full_name', '') }}" required>
+    </label>
+    <label>Email
+      <input type="email" name="email" value="{{ form.get('email', '') }}" required>
+    </label>
+    <label>Password (at least 6 characters)
+      <input type="password" name="password" required>
+    </label>
+    <div class="row">
+      <label>Date of birth
+        <input type="date" name="date_of_birth" value="{{ form.get('date_of_birth', '') }}" required>
+      </label>
+      <label>Gender
+        <select name="gender" required>
+          <option value="">Choose...</option>
+          {% for code, label in [('M', 'Male'), ('F', 'Female'), ('Other', 'Other')] %}
+            <option value="{{ code }}" {% if form.get('gender') == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label>Phone (10 digits)
+      <input type="text" name="phone" value="{{ form.get('phone', '') }}" inputmode="numeric" maxlength="10" required>
+    </label>
+    <label>City / address
+      <input type="text" name="address" value="{{ form.get('address', '') }}">
+    </label>
+    <button class="btn" type="submit">Create account</button>
+  </form>
+  <p class="muted">Already registered? <a href="{{ url_for('login') }}">Log in</a></p>
+</div>
+{% endblock %}

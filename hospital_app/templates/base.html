@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Smart Hospital{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap bar">
+    <a class="brand" href="{{ url_for('home') }}">Smart Hospital</a>
+    <nav>
+      {% if session.user_id %}
+        {% if session.role == 'patient' %}
+          <a href="{{ url_for('patient_dashboard') }}">My appointments</a>
+          <a href="{{ url_for('doctors') }}">Find a doctor</a>
+        {% elif session.role == 'doctor' %}
+          <a href="{{ url_for('doctor_home') }}">Dashboard</a>
+        {% elif session.role == 'admin' %}
+          <a href="{{ url_for('admin_home') }}">Dashboard</a>
+          <a href="{{ url_for('admin_manage') }}">Manage</a>
+        {% endif %}
+        <span class="who">{{ session.name }} <small>({{ session.role }})</small></span>
+        <form method="post" action="{{ url_for('logout') }}" class="inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="linkbtn" type="submit">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Log in</a>
+        <a href="{{ url_for('register') }}">Register</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

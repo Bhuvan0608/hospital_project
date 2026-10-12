@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Daily schedule - Smart Hospital{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>{{ doctor.full_name }}</h1>
+    <p class="muted">{{ doctor.department }} &middot; {{ day|date_nice }}{% if is_today %} (today){% endif %}</p>
+  </div>
+  <form method="get" class="filters">
+    <input type="date" name="date" value="{{ day.isoformat() }}">
+    <button class="btn" type="submit">Go</button>
+    {% if not is_today %}<a class="btn secondary" href="{{ url_for('doctor_home') }}">Today</a>{% endif %}
+  </form>
+</div>
+
+{% if not models_ok %}
+<div class="flash error">The trained models were not found in the <code>model</code> folder, so predictions are switched off. Run the two training scripts first.</div>
+{% endif %}
+
+<div class="grid stats">
+  <div class="card stat"><span>{{ summary.booked }}</span>Booked</div>
+  <div class="card stat"><span>{{ summary.seen }}</span>Seen</div>
+  <div class="card stat"><span>{{ summary.pending }}</span>Waiting</div>
+  {% if summary.overdue %}<div class="card stat"><span>{{ summary.overdue }}</span>Overdue (update status)</div>{% endif %}
+  <div class="card stat"><span>{{ summary.no_shows }}</span>No-shows</div>
+  <div class="card stat"><span>{{ summary.avg_wait if summary.avg_wait is not none else '-' }}</span>Avg wait so far (min)</div>
+  <div class="card stat"><span>{{ summary.expected_no_shows if summary.expected_no_shows is not none else '-' }}</span>Expected no-shows (pending)</div>
+</div>
+
+<h2>Schedule</h2>
+{% if rows %}
+<div class="tablewrap">
+<table>
+  <thead>
+    <tr><th>Time</th><th>Patient</th><th>Reason</th><th>Status</th><th>No-show risk</th><th>Wait (min)</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="{{ 'row-' ~ r.risk if r.risk == 'high' else '' }}">
+      <td>{{ r.slot_time|time12 }}</td>
+      <td>{{ r.patient_name }} <span class="muted">({{ r.age }})</span></td>
+      <td>{{ r.reason or '-' }}</td>
+      <td><span class="badge {{ r.status }}">{{ r.status|replace('_', ' ') }}</span></td>
+      <td>
+        {% if r.no_show_prob is not none %}
+          <span class="risk {{ r.risk }}">{{ r.risk }} &middot; {{ (r.no_show_prob * 100)|round|int }}%</span>
+        {% else %}-{% endif %}
+      </td>
+      <td>
+        {% if r.status == 'completed' and r.waiting_minutes is not none %}
+          {{ r.waiting_minutes }} <span class="muted">actual</span>
+        {% elif r.overdue %}
+          <span class="muted">overdue</span>
+        {% elif r.est_wait is not none %}
+          ~{{ r.est_wait }} <span class="muted">est.</span>
+        {% else %}-{% endif %}
+      </td>
+      <td class="actions">
+        {% if r.status == 'scheduled' and is_today %}
+          <form method="post" action="{{ url_for('mark_seen', appt_id=r.appointment_id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn small" type="submit">Seen</button>
+          </form>
+          <form method="post" action="{{ url_for('mark_no_show', appt_id=r.appointment_id) }}"
+                onsubmit="return confirm('Mark this patient as a no-show?');">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn small danger" type="submit">No-show</button>
+          </form>
+        {% elif r.status == 'completed' %}
+          <a class="btn small secondary" href="{{ url_for('consultation_notes', appt_id=r.appointment_id) }}">
+            {{ 'Edit notes' if r.has_notes else 'Add notes' }}
+          </a>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if hidden_cancelled %}
+  <p class="muted">{{ hidden_cancelled }} cancelled appointment{{ '' if hidden_cancelled == 1 else 's' }} not shown.</p>
+{% endif %}
+{% else %}
+  <p class="muted">No appointments on this date.</p>
+{% endif %}
+
+<div class="card note">
+  <strong>How to read this</strong>
+  <ul>
+    <li><b>No-show risk</b> is the model's estimated chance that the patient will not come: low is under 15%, medium 15&ndash;30%, high 30% or more.</li>
+    <li><b>Wait</b> is the estimated minutes past the booked time before the patient is seen. It is updated from how late you are running, so click <b>Seen</b> when each patient goes in.</li>
+    <li>A patient still marked pending more than an hour after their slot is shown as <b>overdue</b>. Click <b>Seen</b> or <b>No-show</b> to update them.</li>
+    <li>The estimates are saved in the <code>predictions</code> table each time this page loads.</li>
+  </ul>
+</div>
+{% endblock %}

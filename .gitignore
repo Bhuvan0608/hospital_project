@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+hospital_app/config.py
+data/
+outputs/
+hospital_app/hospital_app/

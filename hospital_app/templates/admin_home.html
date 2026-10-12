@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Admin dashboard - Smart Hospital{% endblock %}
+
+{% macro bars(items, title, note='') %}
+<div class="card chart">
+  <h3>{{ title }}</h3>
+  {% for i in items %}
+  <div class="barrow">
+    <span class="bl">{{ i.label }}</span>
+    <span class="track"><span class="fill" style="width: {{ i.width }}%"></span></span>
+    <span class="bv">{{ i.rate if i.rate is not none else '-' }}%<small> ({{ i.n }})</small></span>
+  </div>
+  {% endfor %}
+  {% if note %}<p class="muted small">{{ note }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<h1>Admin dashboard</h1>
+<p class="muted">Figures cover appointments before today ({{ today|date_nice }}) unless stated.</p>
+
+<div class="grid stats">
+  <div class="card stat"><span>{{ counts.patients }}</span>Patients</div>
+  <div class="card stat"><span>{{ counts.doctors }}</span>Doctors</div>
+  <div class="card stat"><span>{{ counts.finished }}</span>Finished appointments</div>
+  <div class="card stat"><span>{{ counts.upcoming }}</span>Upcoming booked</div>
+  <div class="card stat"><span>{{ counts.no_show_rate if counts.no_show_rate is not none else '-' }}%</span>No-show rate</div>
+  <div class="card stat"><span>{{ counts.cancel_rate if counts.cancel_rate is not none else '-' }}%</span>Cancellation rate</div>
+  <div class="card stat"><span>{{ counts.avg_wait if counts.avg_wait is not none else '-' }}</span>Avg wait (min)</div>
+</div>
+
+<h2>Appointments per week</h2>
+<div class="card chart">
+  {% if weekly %}
+  <div class="weeks">
+    {% for w in weekly %}
+    <div class="col" title="{{ w.title }}">
+      <div class="seg cancelled" style="height: {{ w.cancelled }}px"></div>
+      <div class="seg no_show" style="height: {{ w.no_show }}px"></div>
+      <div class="seg completed" style="height: {{ w.completed }}px"></div>
+      <span class="wl">{{ w.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="legend"><i class="dot completed"></i> Completed <i class="dot no_show"></i> No-show <i class="dot cancelled"></i> Cancelled
+    <span class="muted">&middot; hover a column for the numbers. The current week is left out until it ends.</span></p>
+  {% else %}
+    <p class="muted">No past appointments yet.</p>
+  {% endif %}
+</div>
+
+<h2>Where no-shows happen</h2>
+<div class="two">
+  {{ bars(dept_chart, 'No-show rate by department') }}
+  {{ bars(day_chart, 'No-show rate by weekday') }}
+  {{ bars(lead_chart, 'No-show rate by booking lead time', 'Time between booking and the appointment date.') }}
+  {{ bars(sms_chart, 'No-show rate by reminder', 'Reminders in the sample data lower no-shows, which is why the model uses them.') }}
+</div>
+<p class="muted small">Numbers in brackets are the finished appointments behind each rate.</p>
+
+<h2>Upcoming appointments most likely to be missed</h2>
+<div class="card">
+  <div class="head">
+    <p class="muted" style="margin:0">Next 7 days, highest predicted no-show risk first.</p>
+    <form method="post" action="{{ url_for('admin_refresh_predictions') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="btn small" type="submit" {% if not has_predictions_model %}disabled{% endif %}>Refresh predictions</button>
+    </form>
+  </div>
+  {% if risky %}
+  <div class="tablewrap flat">
+  <table>
+    <thead><tr><th>When</th><th>Patient</th><th>Doctor</th><th>No-show risk</th><th>Reminder</th></tr></thead>
+    <tbody>
+    {% for r in risky %}
+      <tr>
+        <td>{{ r.appointment_date|date_nice }}, {{ r.slot_time|time12 }}</td>
+        <td>{{ r.patient_name }}</td>
+        <td>{{ r.doctor_name }}</td>
+        <td><span class="risk {{ r.risk }}">{{ r.risk }} &middot; {{ (r.prob * 100)|round|int }}%</span></td>
+        <td>
+          {% if r.sms_reminder_sent %}<span class="muted">sent</span>
+          {% else %}
+          <form method="post" action="{{ url_for('send_reminder', appt_id=r.appointment_id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn small secondary" type="submit">Send reminder</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">Send reminder is simulated: it records that a reminder was sent and re-scores the appointment. No real SMS goes out.</p>
+  {% else %}
+    <p class="muted">No stored predictions for the next 7 days yet. Click <b>Refresh predictions</b>.</p>
+  {% endif %}
+</div>
+
+<h2>Prediction check</h2>
+<div class="card">
+  {% if check.total %}
+  <p class="muted">Stored predictions for appointments that have since been marked Seen or No-show ({{ check.total }} so far). A good model has actual rates that rise with the risk band.</p>
+  <div class="tablewrap flat">
+  <table>
+    <thead><tr><th>Risk band</th><th>Appointments</th><th>Predicted no-show</th><th>Actual no-show</th></tr></thead>
+    <tbody>
+    {% for b in check.bands %}
+      <tr><td>{{ b.label }}</td><td>{{ b.n }}</td>
+          <td>{{ b.predicted if b.predicted is not none else '-' }}{{ '%' if b.predicted is not none }}</td>
+          <td>{{ b.actual if b.actual is not none else '-' }}{{ '%' if b.actual is not none }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+    <p class="muted">No resolved predictions yet. When doctors mark patients as Seen or No-show, this table compares what the model predicted with what happened.</p>
+  {% endif %}
+</div>
+
+<h2>Doctors: workload and waiting</h2>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Doctor</th><th>Department</th><th>Finished</th><th>No-show rate</th><th>Avg wait (min)</th><th>Upcoming</th></tr></thead>
+  <tbody>
+  {% for d in doctors %}
+    <tr>
+      <td>{{ d.full_name }}</td><td>{{ d.department }}</td><td>{{ d.finished }}</td>
+      <td>{{ d.no_show_rate if d.no_show_rate is not none else '-' }}{{ '%' if d.no_show_rate is not none }}</td>
+      <td>{{ d.avg_wait if d.avg_wait is not none else '-' }}</td>
+      <td>{{ d.upcoming }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Model performance</h2>
+{% if model_tables %}
+<div class="stack">
+  {% for t in model_tables %}
+  <div class="card">
+    <h3>{{ model_titles[loop.index0] }}</h3>
+    <div class="tablewrap flat">
+    <table>
+      <thead><tr>{% for h in t.head %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in t.body %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% if model_images %}
+<div class="gallery">
+  {% for name, title in model_images %}
+  <figure class="card">
+    <img src="{{ url_for('admin_model_file', name=name) }}" alt="{{ title }}">
+    <figcaption>{{ title }}</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+{% endif %}
+{% else %}
+  <p class="muted">Model results not found. Run the two training scripts to create the <code>model</code> folder.</p>
+{% endif %}
+{% endblock %}

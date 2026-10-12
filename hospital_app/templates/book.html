@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Book appointment - Smart Hospital{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('doctors') }}">&larr; Back to doctors</a></p>
+<h1>Book with {{ doctor.full_name }}</h1>
+<p class="muted">{{ doctor.department }} &middot; {{ doctor.qualification }} &middot; about {{ doctor.consultation_min }} min per patient</p>
+
+<form method="get" class="filters">
+  <label class="inlinelabel">Choose a date
+    <input type="date" name="date" value="{{ chosen.isoformat() }}"
+           min="{{ min_date.isoformat() }}" max="{{ max_date.isoformat() }}">
+  </label>
+  <button class="btn" type="submit">Show slots</button>
+</form>
+
+<h2>Available slots on {{ chosen|date_nice }}</h2>
+{% if slots %}
+<form method="post">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="date" value="{{ chosen.isoformat() }}">
+  <div class="slots">
+    {% for s in slots %}
+      <label class="slot">
+        <input type="radio" name="slot" value="{{ s.value }}" required>
+        <span>{{ s.label }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <label class="reasonbox">Reason for visit (optional)
+    <input type="text" name="reason" maxlength="255" placeholder="e.g. Fever and cold">
+  </label>
+  <button class="btn" type="submit">Confirm booking</button>
+</form>
+{% else %}
+  <p class="muted">No free slots on this date. The doctor may be off, fully booked, or the date is outside the next {{ (max_date - min_date).days }} days. Try another date.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Manage - Smart Hospital{% endblock %}
+{% block content %}
+<h1>Manage departments and doctors</h1>
+
+<div class="two">
+  <div class="card">
+    <h3>Add a department</h3>
+    <form method="post" action="{{ url_for('admin_add_department') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <label>Name
+        <input type="text" name="name" maxlength="80" required>
+      </label>
+      <label>Description (optional)
+        <input type="text" name="description" maxlength="255">
+      </label>
+      <button class="btn" type="submit">Add department</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Departments</h3>
+    <div class="tablewrap flat">
+    <table>
+      <thead><tr><th>Name</th><th>Doctors</th></tr></thead>
+      <tbody>
+      {% for d in departments %}
+        <tr><td>{{ d.name }}</td><td>{{ d.doctors }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<h2>Add a doctor</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('admin_add_doctor') }}">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="row">
+      <label>Full name <small class="muted">("Dr." is added if missing)</small>
+        <input type="text" name="full_name" value="{{ form.get('full_name', '') }}" required>
+      </label>
+      <label>Department
+        <select name="department_id" required>
+          <option value="">Choose...</option>
+          {% for d in departments %}
+            <option value="{{ d.department_id }}" {% if form.get('department_id') == d.department_id|string %}selected{% endif %}>{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label>Login email
+        <input type="email" name="email" value="{{ form.get('email', '') }}" required>
+      </label>
+      <label>Password (at least 6 characters)
+        <input type="password" name="password" required>
+      </label>
+    </div>
+    <div class="row">
+      <label>Qualification
+        <input type="text" name="qualification" value="{{ form.get('qualification', '') }}" placeholder="e.g. MBBS, MD">
+      </label>
+      <label>Minutes per patient
+        <input type="text" name="consultation_min" value="{{ form.get('consultation_min', '15') }}" inputmode="numeric" required>
+      </label>
+    </div>
+
+    <div class="rolelabel">Working days</div>
+    <div class="checks">
+      {% for value, label in days %}
+        <label><input type="checkbox" name="days" value="{{ value }}" {% if value in selected_days %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+
+    <div class="row">
+      <label>Morning session starts
+        <input type="time" name="m_start" value="{{ form.get('m_start', '09:00') }}" required>
+      </label>
+      <label>Morning session ends
+        <input type="time" name="m_end" value="{{ form.get('m_end', '13:00') }}" required>
+      </label>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" name="afternoon" value="1" {% if form.get('afternoon') == '1' %}checked{% endif %}> Also works an afternoon session</label>
+    </div>
+    <div class="row">
+      <label>Afternoon session starts
+        <input type="time" name="a_start" value="{{ form.get('a_start', '14:00') }}">
+      </label>
+      <label>Afternoon session ends
+        <input type="time" name="a_end" value="{{ form.get('a_end', '17:00') }}">
+      </label>
+    </div>
+    <button class="btn" type="submit">Add doctor</button>
+  </form>
+</div>
+
+<h2>Doctors</h2>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Doctor</th><th>Department</th><th>Qualification</th><th>Min / patient</th><th>Login email</th></tr></thead>
+  <tbody>
+  {% for d in doctors %}
+    <tr><td>{{ d.full_name }}</td><td>{{ d.department }}</td><td>{{ d.qualification or '-' }}</td>
+        <td>{{ d.consultation_min }}</td><td>{{ d.email }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

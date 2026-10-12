@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Log in - Smart Hospital{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h1>Log in</h1>
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="rolelabel">Log in as</div>
+    <div class="roles" role="radiogroup" aria-label="Log in as">
+      {% for value, label in roles %}
+      <label class="roleopt">
+        <input type="radio" name="role" value="{{ value }}" {% if value == selected %}checked{% endif %} required>
+        <span>{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <label>Email
+      <input type="email" name="email" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" required>
+    </label>
+    <button class="btn" type="submit">Log in</button>
+  </form>
+  <p class="muted" id="register-line">New patient? <a href="{{ url_for('register') }}">Create an account</a></p>
+</div>
+<script>
+  // The registration link only makes sense for patients.
+  var line = document.getElementById("register-line");
+  function updateRegisterLine() {
+    var chosen = document.querySelector('input[name="role"]:checked');
+    line.style.display = (!chosen || chosen.value === "patient") ? "" : "none";
+  }
+  document.querySelectorAll('input[name="role"]').forEach(function (r) {
+    r.addEventListener("change", updateRegisterLine);
+  });
+  updateRegisterLine();
+</script>
+{% endblock %}

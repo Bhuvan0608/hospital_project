@@ -1,0 +1,7 @@
+model,MAE_min,RMSE_min,R2
+Baseline: always the average,7.866,10.11,-0.0
+Baseline: always the median,6.475,12.005,-0.41
+Booking-time only (Gradient Boosting),7.762,10.064,0.009
+Live: Linear Regression,5.334,7.273,0.482
+Live: Random Forest,4.806,6.452,0.593
+Live: Gradient Boosting,4.738,6.326,0.608
