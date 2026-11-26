@@ -343,8 +343,11 @@ def load_into_mysql(data):
     cur = conn.cursor()
 
     cur.execute("SET FOREIGN_KEY_CHECKS = 0")
-    for table in ["predictions", "consultations", "appointments", "doctor_schedules",
-                  "doctors", "patients", "departments", "users"]:
+    cur.execute("SHOW TABLES LIKE 'doctor_leaves'")
+    tables = ["predictions", "consultations", "appointments", "doctor_schedules"]
+    if cur.fetchall():  # exists once the web app has upgraded the database
+        tables.append("doctor_leaves")
+    for table in tables + ["doctors", "patients", "departments", "users"]:
         cur.execute(f"TRUNCATE TABLE {table}")
     cur.execute("SET FOREIGN_KEY_CHECKS = 1")
 

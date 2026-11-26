@@ -13,25 +13,53 @@
   <button class="btn" type="submit">Show slots</button>
 </form>
 
-<h2>Available slots on {{ chosen|date_nice }}</h2>
+<h2>Slots on {{ chosen|date_nice }}</h2>
+{% if why_text %}
+  <div class="notice warn">{{ why_text }}
+    <button type="button" class="btn small" onclick="showAlternatives({{ doctor.doctor_id }}, '{{ chosen.isoformat() }}', '')">Show available doctors</button>
+  </div>
+{% endif %}
+
 {% if slots %}
 <form method="post">
   <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="date" value="{{ chosen.isoformat() }}">
   <div class="slots">
     {% for s in slots %}
+      {% if s.free %}
       <label class="slot">
         <input type="radio" name="slot" value="{{ s.value }}" required>
         <span>{{ s.label }}</span>
       </label>
+      {% else %}
+      <button type="button" class="slot-taken" title="Booked: click to see who else is free"
+              onclick="showAlternatives({{ doctor.doctor_id }}, '{{ chosen.isoformat() }}', '{{ s.value }}')">
+        {{ s.label }}<small>booked</small>
+      </button>
+      {% endif %}
     {% endfor %}
   </div>
+  <p class="muted small">Booked times are greyed out. Click one to see which other doctors are free then.</p>
+  {% if free_count %}
   <label class="reasonbox">Reason for visit (optional)
     <input type="text" name="reason" maxlength="255" placeholder="e.g. Fever and cold">
   </label>
-  <button class="btn" type="submit">Confirm booking</button>
+  <button class="btn" type="submit">Request appointment</button>
+  <p class="muted small">The doctor confirms your request. You will see it as Confirmed on your appointments page.</p>
+  {% else %}
+  <p class="muted">Every slot on this date is booked.</p>
+  {% endif %}
 </form>
-{% else %}
-  <p class="muted">No free slots on this date. The doctor may be off, fully booked, or the date is outside the next {{ (max_date - min_date).days }} days. Try another date.</p>
+{% elif not why_text %}
+  <p class="muted">No slots on this date.</p>
+{% endif %}
+
+{% include "_alt_modal.html" %}
+{% if auto_open %}
+<script>
+  window.addEventListener("load", function () {
+    showAlternatives({{ doctor.doctor_id }}, "{{ chosen.isoformat() }}", "{{ auto_time }}");
+  });
+</script>
 {% endif %}
 {% endblock %}

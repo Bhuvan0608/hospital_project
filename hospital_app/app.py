@@ -81,6 +81,20 @@ def time12(value):
     return to_time(value).strftime("%I:%M %p").lstrip("0")
 
 
+STATUS_TEXT = {"pending": "Awaiting confirmation", "scheduled": "Confirmed",
+               "completed": "Completed", "cancelled": "Cancelled", "no_show": "No show"}
+
+
+@app.template_filter("status_text")
+def status_text(value):
+    return STATUS_TEXT.get(value, value)
+
+
+@app.template_filter("time24")
+def time24(value):
+    return to_time(value).strftime("%H:%M")
+
+
 @app.template_filter("date_nice")
 def date_nice(value):
     return value.strftime("%a, %d %b %Y")
@@ -257,7 +271,8 @@ def register():
 @login_required("patient")
 def patient_dashboard():
     rows = query("""
-        SELECT a.appointment_id, a.appointment_date, a.slot_time, a.status, a.reason,
+        SELECT a.appointment_id, a.doctor_id, a.appointment_date, a.slot_time, a.status, a.reason,
+               a.cancelled_by, a.cancel_reason,
                d.full_name AS doctor_name, dep.name AS department
         FROM appointments a
         JOIN doctors d ON d.doctor_id = a.doctor_id
@@ -266,16 +281,19 @@ def patient_dashboard():
         ORDER BY a.appointment_date DESC, a.slot_time DESC""", (session["profile_id"],))
 
     now = datetime.now()
-    upcoming, history = [], []
+    upcoming, history, attention = [], [], []
     for r in rows:
         when = datetime.combine(r["appointment_date"], to_time(r["slot_time"]))
-        if r["status"] == "scheduled" and when >= now:
+        if r["status"] in ("pending", "scheduled") and when >= now:
             upcoming.append(r)
         else:
             history.append(r)
+            if r["status"] == "cancelled" and r["cancelled_by"] == "doctor" and when >= now:
+                attention.append(r)
     upcoming.reverse()  # soonest first
+    attention.reverse()
     return render_template("patient_dashboard.html", upcoming=upcoming, history=history[:30],
-                           total_history=len(history))
+                           total_history=len(history), attention=attention)
 
 
 @app.route("/doctors")
@@ -309,17 +327,26 @@ def doctors():
                            dept_id=dept_id, q=q)
 
 
-def available_slots(doctor, day):
-    """Free slots for one doctor on one date, as a list of dicts."""
+def slot_grid(doctor, day):
+    """Every bookable slot of a doctor on a date, as ({value, minutes, free}, why_none).
+
+    why_none explains an empty list: 'range' (date outside the booking window),
+    'leave' (doctor on leave) or 'off' (doctor does not work that weekday).
+    """
     today = date.today()
     if day < today or day > today + timedelta(days=BOOKING_WINDOW_DAYS):
-        return []
+        return [], "range"
+    if query("SELECT leave_id FROM doctor_leaves WHERE doctor_id = %s AND leave_date = %s",
+             (doctor["doctor_id"], day), one=True):
+        return [], "leave"
 
     step = doctor["consultation_min"]
     sessions = query(
         "SELECT start_time, end_time FROM doctor_schedules "
         "WHERE doctor_id = %s AND day_of_week = %s ORDER BY start_time",
         (doctor["doctor_id"], day.weekday()))
+    if not sessions:
+        return [], "off"
 
     taken = {minutes_of(to_time(r["slot_time"])) for r in query(
         "SELECT slot_time FROM appointments "
@@ -332,11 +359,89 @@ def available_slots(doctor, day):
         m = minutes_of(to_time(s["start_time"]))
         end = minutes_of(to_time(s["end_time"]))
         while m + step <= end:
-            if m not in taken and not (day == today and m <= now_min):
-                t = time(m // 60, m % 60)
-                slots.append({"value": t.strftime("%H:%M"), "minutes": m})
+            if not (day == today and m <= now_min):
+                slots.append({"value": time(m // 60, m % 60).strftime("%H:%M"),
+                              "minutes": m, "free": m not in taken})
             m += step
-    return slots
+    return slots, None
+
+
+def available_slots(doctor, day):
+    """Only the free slots of one doctor on one date."""
+    return [s for s in slot_grid(doctor, day)[0] if s["free"]]
+
+
+def label_slot(s):
+    s["label"] = time12(time(s["minutes"] // 60, s["minutes"] % 60))
+    return s
+
+
+WHY_TEXT = {
+    "leave": "The doctor is on leave on this date.",
+    "off": "The doctor does not see patients on this weekday.",
+    "range": "That date is outside the booking window.",
+}
+
+
+def find_alternatives(doctor_id, day, want_min):
+    """Other doctors (and other times) when the chosen doctor or slot is unavailable."""
+    base = """SELECT d.doctor_id, d.full_name, d.consultation_min, d.department_id,
+                     dep.name AS department
+              FROM doctors d JOIN departments dep ON dep.department_id = d.department_id"""
+    this = query(base + " WHERE d.doctor_id = %s", (doctor_id,), one=True)
+    if this is None:
+        return None
+    others = query(base + " WHERE d.doctor_id <> %s ORDER BY dep.name, d.full_name", (doctor_id,))
+
+    grid, why = slot_grid(this, day)
+    free_here = [s for s in grid if s["free"]]
+    if want_min is not None and why is None:
+        why = "booked" if any(s["minutes"] == want_min and not s["free"] for s in grid) else None
+    same_doc = []
+    if want_min is not None:
+        near = sorted(free_here, key=lambda s: abs(s["minutes"] - want_min))[:4]
+        same_doc = [label_slot(s) for s in sorted(near, key=lambda s: s["minutes"])]
+
+    exact, nearby = [], []
+    for o in others:
+        free = available_slots(o, day)
+        if not free:
+            continue
+        same_dept = o["department_id"] == this["department_id"]
+        if want_min is None:
+            exact.append({"doctor": o, "same_dept": same_dept,
+                          "slots": [label_slot(s) for s in free[:4]]})
+            continue
+        match = [s for s in free if s["minutes"] == want_min]
+        if match:
+            exact.append({"doctor": o, "same_dept": same_dept, "slots": [label_slot(match[0])]})
+        else:
+            best = min(free, key=lambda s: abs(s["minutes"] - want_min))
+            if abs(best["minutes"] - want_min) <= 60:
+                nearby.append({"doctor": o, "same_dept": same_dept, "slots": [label_slot(best)]})
+    exact.sort(key=lambda g: not g["same_dept"])
+    if want_min is not None:
+        nearby.sort(key=lambda g: (abs(g["slots"][0]["minutes"] - want_min), not g["same_dept"]))
+    return {"this": this, "why": why, "exact": exact[:6], "nearby": nearby[:4], "same_doc": same_doc}
+
+
+@app.route("/alternatives/<int:doctor_id>")
+@login_required("patient")
+def alternatives(doctor_id):
+    try:
+        day = date.fromisoformat(request.args.get("date", ""))
+    except ValueError:
+        abort(400)
+    want = parse_hhmm(request.args.get("time", ""))
+    data = find_alternatives(doctor_id, day, minutes_of(want) if want else None)
+    if data is None:
+        abort(404)
+    want_label = time12(want) if want else None
+    return render_template("_alternatives.html", day=day, want=want, want_label=want_label,
+                           why_text=("That time slot is already booked." if data["why"] == "booked"
+                                     else WHY_TEXT.get(data["why"],
+                                                       "No free slots are left on this date.")),
+                           **data)
 
 
 @app.route("/book/<int:doctor_id>", methods=["GET", "POST"])
@@ -356,27 +461,35 @@ def book(doctor_id):
     except ValueError:
         chosen = today
 
-    slots = available_slots(doctor, chosen)
+    slots, why = slot_grid(doctor, chosen)
+    free_count = sum(1 for sl in slots if sl["free"])
 
     if request.method == "POST":
         slot_value = request.form.get("slot", "")
         reason = request.form.get("reason", "").strip()[:255] or None
-        if slot_value not in {s["value"] for s in slots}:
-            flash("That slot is no longer available. Please choose another.", "error")
-            return redirect(url_for("book", doctor_id=doctor_id, date=chosen.isoformat()))
+        if slot_value not in {sl["value"] for sl in slots if sl["free"]}:
+            flash(f"{doctor['full_name']} is not available at that time.", "error")
+            return redirect(url_for("book", doctor_id=doctor_id, date=chosen.isoformat(),
+                                    unavailable=slot_value))
         slot_time = time.fromisoformat(slot_value)
         result = create_appointment(session["profile_id"], doctor_id, chosen, slot_time, reason)
         if isinstance(result, int):
             score_new_booking(doctor_id, chosen, result)
-            flash(f"Appointment booked with {doctor['full_name']} on "
-                  f"{date_nice(chosen)} at {time12(slot_time)}.", "success")
+            flash(f"Appointment requested with {doctor['full_name']} on {date_nice(chosen)} at "
+                  f"{time12(slot_time)}. It is confirmed once the doctor accepts.", "success")
             return redirect(url_for("patient_dashboard"))
         flash(result, "error")
-        return redirect(url_for("book", doctor_id=doctor_id, date=chosen.isoformat()))
+        return redirect(url_for("book", doctor_id=doctor_id, date=chosen.isoformat(),
+                                unavailable=slot_value))
 
-    for s in slots:
-        s["label"] = time12(time(s["minutes"] // 60, s["minutes"] % 60))
+    unavailable = request.args.get("unavailable", "")
+    for sl in slots:
+        label_slot(sl)
+    # Pop up the suggestions when a booking just failed or the whole day has no free slot.
+    auto_open = bool(unavailable) or (not free_count and why != "range")
     return render_template("book.html", doctor=doctor, chosen=chosen, slots=slots,
+                           free_count=free_count, why_text=WHY_TEXT.get(why, ""),
+                           auto_open=auto_open, auto_time=unavailable,
                            min_date=today,
                            max_date=today + timedelta(days=BOOKING_WINDOW_DAYS))
 
@@ -388,7 +501,7 @@ def create_appointment(patient_id, doctor_id, day, slot_time, reason):
     try:
         cur.execute(
             "SELECT appointment_id FROM appointments WHERE patient_id = %s "
-            "AND appointment_date = %s AND slot_time = %s AND status = 'scheduled'",
+            "AND appointment_date = %s AND slot_time = %s AND status IN ('pending', 'scheduled')",
             (patient_id, day, slot_time))
         if cur.fetchall():
             return "You already have an appointment at that time."
@@ -410,16 +523,17 @@ def create_appointment(patient_id, doctor_id, day, slot_time, reason):
             appointment_id = row["appointment_id"]
             cur.execute("DELETE FROM predictions WHERE appointment_id = %s", (appointment_id,))
             cur.execute(
-                "UPDATE appointments SET patient_id = %s, status = 'scheduled', "
+                "UPDATE appointments SET patient_id = %s, status = 'pending', "
                 "booked_at = %s, reason = %s, sms_reminder_sent = 0, "
-                "actual_start_time = NULL, waiting_minutes = NULL "
+                "actual_start_time = NULL, waiting_minutes = NULL, "
+                "cancelled_by = NULL, cancel_reason = NULL "
                 "WHERE appointment_id = %s",
                 (patient_id, now, reason, appointment_id))
         else:
             cur.execute(
                 "INSERT INTO appointments (patient_id, doctor_id, booked_at, "
                 "appointment_date, slot_time, status, reason) "
-                "VALUES (%s, %s, %s, %s, %s, 'scheduled', %s)",
+                "VALUES (%s, %s, %s, %s, %s, 'pending', %s)",
                 (patient_id, doctor_id, now, day, slot_time, reason))
             appointment_id = cur.lastrowid
         db.commit()
@@ -440,14 +554,14 @@ def cancel_appointment(appt_id):
         (appt_id, session["profile_id"]), one=True)
     if appt is None:
         flash("Appointment not found.", "error")
-    elif appt["status"] != "scheduled" or \
+    elif appt["status"] not in ("pending", "scheduled") or \
             datetime.combine(appt["appointment_date"], to_time(appt["slot_time"])) < datetime.now():
         flash("This appointment can no longer be cancelled.", "error")
     else:
         db = get_db()
         cur = db.cursor()
-        cur.execute("UPDATE appointments SET status = 'cancelled' WHERE appointment_id = %s",
-                    (appt_id,))
+        cur.execute("UPDATE appointments SET status = 'cancelled', cancelled_by = 'patient', "
+                    "cancel_reason = NULL WHERE appointment_id = %s", (appt_id,))
         db.commit()
         cur.close()
         flash("Appointment cancelled.", "success")
@@ -512,11 +626,11 @@ def patient_history(patient_ids):
 
 
 def score_day(doctor, capacity, day, rows):
-    """Adds no_show_prob, risk and est_wait to the still-scheduled rows."""
+    """Adds no_show_prob, risk and est_wait to the open (pending or confirmed) rows."""
     for r in rows:
         r["no_show_prob"] = r["risk"] = r["est_wait"] = None
         r["overdue"] = False
-    pending = [r for r in rows if r["status"] == "scheduled"]
+    pending = [r for r in rows if r["status"] in ("pending", "scheduled")]
     if not pending:
         return
 
@@ -626,21 +740,29 @@ def doctor_home():
     doctor, capacity, rows = load_day(session["profile_id"], day)
     score_day(doctor, capacity, day, rows)
     try:
-        save_predictions([r for r in rows if r["status"] == "scheduled"])
+        save_predictions([r for r in rows if r["status"] in ("pending", "scheduled")])
     except Exception:
         get_db().rollback()
         app.logger.exception("Could not store predictions")
 
     visible = [r for r in rows if r["status"] != "cancelled"]
     seen = [r for r in visible if r["status"] == "completed"]
-    pending = [r for r in visible if r["status"] == "scheduled"]
+    confirmed = [r for r in visible if r["status"] == "scheduled"]
+    to_accept = [r for r in visible if r["status"] == "pending"]
     waits = [int(r["waiting_minutes"]) for r in seen if r["waiting_minutes"] is not None]
-    expected = [r["no_show_prob"] for r in pending if r["no_show_prob"] is not None]
+    expected = [r["no_show_prob"] for r in confirmed + to_accept if r["no_show_prob"] is not None]
+    today = date.today()
+    leave = query("SELECT reason FROM doctor_leaves WHERE doctor_id = %s AND leave_date = %s",
+                  (session["profile_id"], day), one=True)
+    leave_days = query("SELECT leave_date, reason FROM doctor_leaves WHERE doctor_id = %s "
+                       "AND leave_date >= %s ORDER BY leave_date LIMIT 10",
+                       (session["profile_id"], today))
     summary = {
         "booked": len(visible),
         "seen": len(seen),
-        "pending": len(pending) - sum(1 for r in pending if r["overdue"]),
-        "overdue": sum(1 for r in pending if r["overdue"]),
+        "waiting": len(confirmed) - sum(1 for r in confirmed if r["overdue"]),
+        "overdue": sum(1 for r in confirmed if r["overdue"]),
+        "to_accept": len(to_accept),
         "no_shows": sum(1 for r in visible if r["status"] == "no_show"),
         "avg_wait": round(sum(waits) / len(waits)) if waits else None,
         "expected_no_shows": round(sum(expected), 1) if expected else None,
@@ -648,6 +770,8 @@ def doctor_home():
     return render_template("doctor_home.html", doctor=doctor, day=day, rows=visible,
                            summary=summary, is_today=(day == date.today()),
                            hidden_cancelled=len(rows) - len(visible),
+                           leave=leave, leave_days=leave_days, can_edit_leave=(day >= today),
+                           open_count=len(confirmed) + len(to_accept),
                            models_ok=predictor.has_no_show and predictor.has_wait)
 
 
@@ -664,7 +788,7 @@ def mark_seen(appt_id):
     if a is None:
         flash("Appointment not found.", "error")
     elif a["status"] != "scheduled" or a["appointment_date"] != date.today():
-        flash("Only today's pending appointments can be updated.", "error")
+        flash("Only today's confirmed appointments can be updated.", "error")
     else:
         now = datetime.now()
         slot_dt = datetime.combine(a["appointment_date"], to_time(a["slot_time"]))
@@ -696,7 +820,7 @@ def mark_no_show(appt_id):
     if a is None:
         flash("Appointment not found.", "error")
     elif a["status"] != "scheduled" or a["appointment_date"] != date.today():
-        flash("Only today's pending appointments can be updated.", "error")
+        flash("Only today's confirmed appointments can be updated.", "error")
     else:
         db = get_db()
         cur = db.cursor()
@@ -706,6 +830,114 @@ def mark_no_show(appt_id):
         cur.close()
         flash("Marked as no-show.", "success")
     return redirect(url_for("doctor_home"))
+
+
+@app.route("/doctor/appointments/<int:appt_id>/accept", methods=["POST"])
+@login_required("doctor")
+def accept_appointment(appt_id):
+    a = own_appointment(appt_id)
+    if a is None:
+        flash("Appointment not found.", "error")
+        return redirect(url_for("doctor_home"))
+    when = datetime.combine(a["appointment_date"], to_time(a["slot_time"]))
+    if a["status"] != "pending":
+        flash("Only bookings waiting for acceptance can be accepted.", "error")
+    elif when < datetime.now():
+        flash("That time has already passed.", "error")
+    else:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE appointments SET status = 'scheduled' WHERE appointment_id = %s",
+                    (appt_id,))
+        db.commit()
+        cur.close()
+        flash("Appointment accepted. The patient now sees it as confirmed.", "success")
+    return redirect(url_for("doctor_home", date=a["appointment_date"].isoformat()))
+
+
+@app.route("/doctor/appointments/<int:appt_id>/cancel", methods=["POST"])
+@login_required("doctor")
+def doctor_cancel(appt_id):
+    reason = request.form.get("reason", "").strip()[:255] or "Cancelled by the doctor"
+    a = own_appointment(appt_id)
+    if a is None:
+        flash("Appointment not found.", "error")
+        return redirect(url_for("doctor_home"))
+    when = datetime.combine(a["appointment_date"], to_time(a["slot_time"]))
+    if a["status"] not in ("pending", "scheduled"):
+        flash("Only waiting or confirmed appointments can be cancelled.", "error")
+    elif when < datetime.now():
+        flash("Past appointments cannot be cancelled.", "error")
+    else:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("UPDATE appointments SET status = 'cancelled', cancelled_by = 'doctor', "
+                    "cancel_reason = %s WHERE appointment_id = %s", (reason, appt_id))
+        db.commit()
+        cur.close()
+        flash("Appointment cancelled. The patient will see your reason and can pick another doctor.",
+              "success")
+    return redirect(url_for("doctor_home", date=a["appointment_date"].isoformat()))
+
+
+@app.route("/doctor/leave", methods=["POST"])
+@login_required("doctor")
+def mark_leave():
+    try:
+        day = date.fromisoformat(request.form.get("date", ""))
+    except ValueError:
+        flash("Please choose a valid date.", "error")
+        return redirect(url_for("doctor_home"))
+    today = date.today()
+    if day < today:
+        flash("You can only mark today or a future date as leave.", "error")
+        return redirect(url_for("doctor_home"))
+    reason = request.form.get("reason", "").strip()[:200] or "Doctor on leave"
+    doctor_id = session["profile_id"]
+
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("INSERT INTO doctor_leaves (doctor_id, leave_date, reason) VALUES (%s, %s, %s)",
+                    (doctor_id, day, reason))
+        sql = ("UPDATE appointments SET status = 'cancelled', cancelled_by = 'doctor', "
+               "cancel_reason = %s WHERE doctor_id = %s AND appointment_date = %s "
+               "AND status IN ('pending', 'scheduled')")
+        params = [reason, doctor_id, day]
+        if day == today:  # slots that already passed are left alone
+            sql += " AND slot_time > %s"
+            params.append(datetime.now().time().replace(microsecond=0))
+        cur.execute(sql, tuple(params))
+        cancelled = cur.rowcount
+        db.commit()
+    except mysql.connector.IntegrityError:
+        db.rollback()
+        flash("That day is already marked as leave.", "error")
+        return redirect(url_for("doctor_home", date=day.isoformat()))
+    finally:
+        cur.close()
+    flash(f"Leave marked for {date_nice(day)}. {cancelled} appointment"
+          f"{'' if cancelled == 1 else 's'} cancelled and no new bookings are possible that day.",
+          "success")
+    return redirect(url_for("doctor_home", date=day.isoformat()))
+
+
+@app.route("/doctor/leave/remove", methods=["POST"])
+@login_required("doctor")
+def remove_leave():
+    try:
+        day = date.fromisoformat(request.form.get("date", ""))
+    except ValueError:
+        return redirect(url_for("doctor_home"))
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM doctor_leaves WHERE doctor_id = %s AND leave_date = %s "
+                "AND leave_date >= %s", (session["profile_id"], day, date.today()))
+    db.commit()
+    cur.close()
+    flash("Leave removed. Patients can book that day again; cancelled appointments stay cancelled.",
+          "success")
+    return redirect(url_for("doctor_home", date=day.isoformat()))
 
 
 @app.route("/doctor/appointments/<int:appt_id>/notes", methods=["GET", "POST"])
@@ -855,7 +1087,7 @@ def admin_stats(today):
         "patients": query("SELECT COUNT(*) AS n FROM patients", one=True)["n"],
         "doctors": query("SELECT COUNT(*) AS n FROM doctors", one=True)["n"],
         "upcoming": query("SELECT COUNT(*) AS n FROM appointments "
-                          "WHERE status = 'scheduled' AND appointment_date >= %s",
+                          "WHERE status IN ('pending', 'scheduled') AND appointment_date >= %s",
                           (today,), one=True)["n"],
         "finished": len(finished),
         "no_show_rate": pct(no_shows, len(finished)),
@@ -868,7 +1100,7 @@ def admin_stats(today):
                SUM(CASE WHEN a.status IN ('completed', 'no_show') THEN 1 ELSE 0 END) AS finished,
                SUM(CASE WHEN a.status = 'no_show' THEN 1 ELSE 0 END) AS no_shows,
                AVG(a.waiting_minutes) AS avg_wait,
-               SUM(CASE WHEN a.status = 'scheduled' AND a.appointment_date >= %s
+               SUM(CASE WHEN a.status IN ('pending', 'scheduled') AND a.appointment_date >= %s
                         THEN 1 ELSE 0 END) AS upcoming
         FROM doctors d
         JOIN departments dep ON dep.department_id = d.department_id
@@ -921,7 +1153,7 @@ def risky_upcoming(today, limit=10):
         JOIN appointments a ON a.appointment_id = pr.appointment_id
         JOIN patients p ON p.patient_id = a.patient_id
         JOIN doctors d ON d.doctor_id = a.doctor_id
-        WHERE a.status = 'scheduled' AND a.appointment_date >= %s AND a.appointment_date <= %s
+        WHERE a.status IN ('pending', 'scheduled') AND a.appointment_date >= %s AND a.appointment_date <= %s
         ORDER BY pr.no_show_probability DESC LIMIT 60""",
         (today, today + timedelta(days=7)))
     out = []
@@ -973,7 +1205,7 @@ def admin_refresh_predictions():
             if not rows:
                 continue
             score_day(doctor, capacity, day, rows)
-            pending = [r for r in rows if r["status"] == "scheduled"]
+            pending = [r for r in rows if r["status"] in ("pending", "scheduled")]
             save_predictions(pending)
             scored += sum(1 for r in pending if r["no_show_prob"] is not None)
     flash(f"Predictions refreshed for {scored} upcoming appointments.", "success")
@@ -985,7 +1217,7 @@ def admin_refresh_predictions():
 def send_reminder(appt_id):
     a = query("SELECT doctor_id, appointment_date, status, sms_reminder_sent "
               "FROM appointments WHERE appointment_id = %s", (appt_id,), one=True)
-    if a is None or a["status"] != "scheduled" or a["appointment_date"] < date.today():
+    if a is None or a["status"] not in ("pending", "scheduled") or a["appointment_date"] < date.today():
         flash("Reminders can only be sent for upcoming appointments.", "error")
     elif a["sms_reminder_sent"]:
         flash("A reminder was already sent for this appointment.", "error")
@@ -1155,6 +1387,43 @@ def admin_add_doctor():
     return redirect(url_for("admin_manage"))
 
 
+def ensure_schema():
+    """Upgrade an existing database for booking approval and doctor leave.
+
+    Safe to run on every start: each step is skipped if it is already done.
+    """
+    db = mysql.connector.connect(
+        host=config.DB_HOST, port=config.DB_PORT, user=config.DB_USER,
+        password=config.DB_PASSWORD, database=config.DB_NAME)
+    cur = db.cursor()
+    cur.execute("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s "
+                "AND TABLE_NAME = 'appointments' AND COLUMN_NAME = 'status'", (config.DB_NAME,))
+    ctype = cur.fetchone()[0]
+    if isinstance(ctype, (bytes, bytearray)):
+        ctype = ctype.decode()
+    if "'pending'" not in str(ctype):
+        cur.execute("ALTER TABLE appointments MODIFY COLUMN status "
+                    "ENUM('scheduled','completed','cancelled','no_show','pending') "
+                    "NOT NULL DEFAULT 'scheduled'")
+    cur.execute("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s "
+                "AND TABLE_NAME = 'appointments' AND COLUMN_NAME = 'cancel_reason'",
+                (config.DB_NAME,))
+    if cur.fetchone()[0] == 0:
+        cur.execute("ALTER TABLE appointments ADD COLUMN cancelled_by ENUM('patient','doctor') NULL, "
+                    "ADD COLUMN cancel_reason VARCHAR(255) NULL")
+    cur.execute("""CREATE TABLE IF NOT EXISTS doctor_leaves (
+                       leave_id INT AUTO_INCREMENT PRIMARY KEY,
+                       doctor_id INT NOT NULL,
+                       leave_date DATE NOT NULL,
+                       reason VARCHAR(255) NULL,
+                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                       FOREIGN KEY (doctor_id) REFERENCES doctors(doctor_id),
+                       UNIQUE (doctor_id, leave_date))""")
+    db.commit()
+    cur.close()
+    db.close()
+
+
 if __name__ == "__main__":
     try:
         mysql.connector.connect(
@@ -1163,5 +1432,11 @@ if __name__ == "__main__":
     except mysql.connector.Error as err:
         print("\nCould not connect to MySQL:", err)
         print("Check DB_PASSWORD in config.py and that the MySQL80 service is running.\n")
+        raise SystemExit(1)
+    try:
+        ensure_schema()
+    except mysql.connector.Error as err:
+        print("\nCould not upgrade the database:", err)
+        print("Run upgrade_schema.sql in MySQL Workbench once, then start the app again.\n")
         raise SystemExit(1)
     app.run(debug=True)

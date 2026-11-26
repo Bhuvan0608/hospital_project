@@ -20,11 +20,36 @@
 <div class="grid stats">
   <div class="card stat"><span>{{ summary.booked }}</span>Booked</div>
   <div class="card stat"><span>{{ summary.seen }}</span>Seen</div>
-  <div class="card stat"><span>{{ summary.pending }}</span>Waiting</div>
+  {% if summary.to_accept %}<div class="card stat"><span>{{ summary.to_accept }}</span>To accept</div>{% endif %}
+  <div class="card stat"><span>{{ summary.waiting }}</span>Waiting</div>
   {% if summary.overdue %}<div class="card stat"><span>{{ summary.overdue }}</span>Overdue (update status)</div>{% endif %}
   <div class="card stat"><span>{{ summary.no_shows }}</span>No-shows</div>
   <div class="card stat"><span>{{ summary.avg_wait if summary.avg_wait is not none else '-' }}</span>Avg wait so far (min)</div>
   <div class="card stat"><span>{{ summary.expected_no_shows if summary.expected_no_shows is not none else '-' }}</span>Expected no-shows (pending)</div>
+</div>
+
+<div class="card leavebox">
+  {% if leave %}
+    <form method="post" action="{{ url_for('remove_leave') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}">
+      <span><strong>You are on leave on this date</strong>{% if leave.reason %} ({{ leave.reason }}){% endif %}. New bookings are blocked.</span>
+      {% if can_edit_leave %}<button class="btn small secondary" type="submit">Remove leave</button>{% endif %}
+    </form>
+  {% elif can_edit_leave %}
+    <form method="post" action="{{ url_for('mark_leave') }}"
+          onsubmit="return confirm('Mark {{ day|date_nice }} as leave? {{ open_count }} open appointment(s) will be cancelled and the patients told.');">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}">
+      <label style="margin:0">Taking this day off? Reason (shown to patients)
+        <input type="text" name="reason" value="Doctor on leave" maxlength="200">
+      </label>
+      <button class="btn small danger" type="submit">Mark this day as leave</button>
+    </form>
+  {% endif %}
+  {% if leave_days %}
+    <div class="leavechips">Your upcoming leave: {% for l in leave_days %}<span>{{ l.leave_date|date_nice }}</span>{% endfor %}</div>
+  {% endif %}
 </div>
 
 <h2>Schedule</h2>
@@ -40,7 +65,7 @@
       <td>{{ r.slot_time|time12 }}</td>
       <td>{{ r.patient_name }} <span class="muted">({{ r.age }})</span></td>
       <td>{{ r.reason or '-' }}</td>
-      <td><span class="badge {{ r.status }}">{{ r.status|replace('_', ' ') }}</span></td>
+      <td><span class="badge {{ r.status }}">{{ r.status|status_text }}</span></td>
       <td>
         {% if r.no_show_prob is not none %}
           <span class="risk {{ r.risk }}">{{ r.risk }} &middot; {{ (r.no_show_prob * 100)|round|int }}%</span>
@@ -56,7 +81,19 @@
         {% else %}-{% endif %}
       </td>
       <td class="actions">
-        {% if r.status == 'scheduled' and is_today %}
+        {% if r.status == 'pending' and can_edit_leave %}
+          <form method="post" action="{{ url_for('accept_appointment', appt_id=r.appointment_id) }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn small" type="submit">Accept</button>
+          </form>
+          <form method="post" action="{{ url_for('doctor_cancel', appt_id=r.appointment_id) }}"
+                onsubmit="var why = prompt('Reason (the patient will see this):', 'Doctor on leave'); if (why === null) { return false; } this.reason.value = why; return true;">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="reason" value="">
+            <button class="btn small danger" type="submit">Decline</button>
+          </form>
+        {% elif r.status == 'scheduled' %}
+          {% if is_today %}
           <form method="post" action="{{ url_for('mark_seen', appt_id=r.appointment_id) }}">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <button class="btn small" type="submit">Seen</button>
@@ -64,8 +101,17 @@
           <form method="post" action="{{ url_for('mark_no_show', appt_id=r.appointment_id) }}"
                 onsubmit="return confirm('Mark this patient as a no-show?');">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-            <button class="btn small danger" type="submit">No-show</button>
+            <button class="btn small secondary" type="submit">No-show</button>
           </form>
+          {% endif %}
+          {% if can_edit_leave %}
+          <form method="post" action="{{ url_for('doctor_cancel', appt_id=r.appointment_id) }}"
+                onsubmit="var why = prompt('Reason (the patient will see this):', 'Doctor on leave'); if (why === null) { return false; } this.reason.value = why; return true;">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="reason" value="">
+            <button class="btn small danger" type="submit">Cancel</button>
+          </form>
+          {% endif %}
         {% elif r.status == 'completed' %}
           <a class="btn small secondary" href="{{ url_for('consultation_notes', appt_id=r.appointment_id) }}">
             {{ 'Edit notes' if r.has_notes else 'Add notes' }}
@@ -89,7 +135,8 @@
   <ul>
     <li><b>No-show risk</b> is the model's estimated chance that the patient will not come: low is under 15%, medium 15&ndash;30%, high 30% or more.</li>
     <li><b>Wait</b> is the estimated minutes past the booked time before the patient is seen. It is updated from how late you are running, so click <b>Seen</b> when each patient goes in.</li>
-    <li>A patient still marked pending more than an hour after their slot is shown as <b>overdue</b>. Click <b>Seen</b> or <b>No-show</b> to update them.</li>
+    <li>A confirmed patient not yet marked as seen more than an hour after their slot is shown as <b>overdue</b>. Click <b>Seen</b> or <b>No-show</b> to update them.</li>
+    <li>New bookings arrive as <b>Awaiting confirmation</b>. Click <b>Accept</b> to confirm, or <b>Decline</b> or <b>Cancel</b> if you cannot attend (for example on leave). The patient sees your reason and is offered other doctors.</li>
     <li>The estimates are saved in the <code>predictions</code> table each time this page loads.</li>
   </ul>
 </div>

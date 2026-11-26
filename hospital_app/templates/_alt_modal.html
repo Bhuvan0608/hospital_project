@@ -1,0 +1,22 @@
+<dialog id="alt-dialog" class="modal">
+  <div id="alt-body">Loading...</div>
+  <div class="modal-actions"><button type="button" class="btn secondary" id="alt-close">Close</button></div>
+</dialog>
+<script>
+(function () {
+  var dlg = document.getElementById("alt-dialog");
+  var body = document.getElementById("alt-body");
+  var base = "{{ url_for('alternatives', doctor_id=0) }}".replace(/0$/, "");
+  document.getElementById("alt-close").addEventListener("click", function () { dlg.close(); });
+  window.showAlternatives = function (doctorId, day, time) {
+    var url = base + doctorId + "?date=" + encodeURIComponent(day) +
+              (time ? "&time=" + encodeURIComponent(time) : "");
+    body.textContent = "Loading...";
+    dlg.showModal();
+    fetch(url, { credentials: "same-origin" })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { body.innerHTML = html; })
+      .catch(function () { body.textContent = "Could not load suggestions. Please try again."; });
+  };
+})();
+</script>

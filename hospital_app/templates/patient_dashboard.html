@@ -6,11 +6,23 @@
   <a class="btn" href="{{ url_for('doctors') }}">Book a new appointment</a>
 </div>
 
+{% if attention %}
+<div class="notice warn">
+  <strong>The doctor cancelled {{ 'this appointment' if attention|length == 1 else 'these appointments' }}</strong>
+  {% for a in attention %}
+  <div class="attn-row">
+    <div>{{ a.doctor_name }} cancelled your appointment on {{ a.appointment_date|date_nice }} at {{ a.slot_time|time12 }}.{% if a.cancel_reason %} Reason: {{ a.cancel_reason }}.{% endif %}</div>
+    <button type="button" class="btn small" onclick="showAlternatives({{ a.doctor_id }}, '{{ a.appointment_date.isoformat() }}', '{{ a.slot_time|time24 }}')">Find another doctor</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <h2>Upcoming</h2>
 {% if upcoming %}
 <div class="tablewrap">
 <table>
-  <thead><tr><th>Date</th><th>Time</th><th>Doctor</th><th>Department</th><th>Reason</th><th></th></tr></thead>
+  <thead><tr><th>Date</th><th>Time</th><th>Doctor</th><th>Department</th><th>Reason</th><th>Status</th><th></th></tr></thead>
   <tbody>
   {% for a in upcoming %}
     <tr>
@@ -19,6 +31,7 @@
       <td>{{ a.doctor_name }}</td>
       <td>{{ a.department }}</td>
       <td>{{ a.reason or '-' }}</td>
+      <td><span class="badge {{ a.status }}">{{ a.status|status_text }}</span></td>
       <td>
         <form method="post" action="{{ url_for('cancel_appointment', appt_id=a.appointment_id) }}"
               onsubmit="return confirm('Cancel this appointment?');">
@@ -47,7 +60,7 @@
       <td>{{ a.slot_time|time12 }}</td>
       <td>{{ a.doctor_name }}</td>
       <td>{{ a.department }}</td>
-      <td><span class="badge {{ a.status }}">{{ a.status|replace('_', ' ') }}</span></td>
+      <td><span class="badge {{ a.status }}">{{ a.status|status_text }}</span>{% if a.status == 'cancelled' and a.cancelled_by %} <span class="muted small">by {{ a.cancelled_by }}</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
@@ -59,4 +72,5 @@
 {% else %}
   <p class="muted">No past appointments yet.</p>
 {% endif %}
+{% include "_alt_modal.html" %}
 {% endblock %}

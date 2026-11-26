@@ -1,31 +1,161 @@
-{% extends "base.html" %}
-{% block title %}Log in - Smart Hospital{% endblock %}
-{% block content %}
-<div class="card narrow">
-  <h1>Log in</h1>
-  <form method="post">
-    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-    <div class="rolelabel">Log in as</div>
-    <div class="roles" role="radiogroup" aria-label="Log in as">
-      {% for value, label in roles %}
-      <label class="roleopt">
-        <input type="radio" name="role" value="{{ value }}" {% if value == selected %}checked{% endif %} required>
-        <span>{{ label }}</span>
-      </label>
-      {% endfor %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in - Smart Hospital</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='login.css') }}">
+</head>
+<body class="auth-body">
+<div class="auth-wrap">
+
+  <!-- Left: welcome panel with illustration -->
+  <aside class="auth-art" aria-hidden="true">
+    <div class="art-brand"><span class="logo-mark">+</span> Smart Hospital</div>
+    <div class="art-copy">
+      <h2>Care that fits your day</h2>
+      <p>Book visits, follow your appointments, and keep the whole clinic running smoothly, all in one place.</p>
     </div>
-    <label>Email
-      <input type="email" name="email" required autofocus>
-    </label>
-    <label>Password
-      <input type="password" name="password" required>
-    </label>
-    <button class="btn" type="submit">Log in</button>
-  </form>
-  <p class="muted" id="register-line">New patient? <a href="{{ url_for('register') }}">Create an account</a></p>
+
+    <div class="glass-chip chip-a">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M7.5 12.5l3 3 6-6.5"/></svg>
+      Appointment confirmed
+    </div>
+    <div class="glass-chip chip-b">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 2"/></svg>
+      Estimated wait: 5 min
+    </div>
+
+    <svg class="art-scene" viewBox="0 0 640 520" preserveAspectRatio="xMidYMax meet" xmlns="http://www.w3.org/2000/svg">
+      <!-- soft background shapes -->
+      <circle cx="90" cy="120" r="150" fill="#ffffff" opacity=".05"/>
+      <circle cx="560" cy="60" r="110" fill="#ffffff" opacity=".06"/>
+      <g fill="#ffffff" opacity=".28">
+        <rect x="560" y="200" width="6" height="22" rx="2"/><rect x="552" y="208" width="22" height="6" rx="2"/>
+        <rect x="70" y="190" width="5" height="18" rx="2"/><rect x="63" y="197" width="19" height="5" rx="2"/>
+      </g>
+      <!-- ground and walkway -->
+      <rect x="-1500" y="430" width="3640" height="90" fill="#0a2a44" opacity=".55"/>
+      <path d="M248 430 L392 430 L436 520 L204 520 Z" fill="#dcebf1"/>
+      <!-- building -->
+      <rect x="40" y="260" width="120" height="170" rx="8" fill="#e1edf3"/>
+      <rect x="480" y="250" width="120" height="180" rx="8" fill="#e1edf3"/>
+      <rect x="120" y="150" width="400" height="280" rx="10" fill="#f4f9fc"/>
+      <rect x="268" y="102" width="104" height="58" rx="10" fill="#ffffff"/>
+      <rect x="311" y="113" width="18" height="36" rx="3" fill="#ef6f6c"/>
+      <rect x="302" y="122" width="36" height="18" rx="3" fill="#ef6f6c"/>
+      <g fill="#b9dbe6">
+        <rect x="150" y="185" width="40" height="34" rx="4"/><rect x="205" y="185" width="40" height="34" rx="4"/>
+        <rect x="395" y="185" width="40" height="34" rx="4"/><rect x="450" y="185" width="40" height="34" rx="4"/>
+        <rect x="150" y="245" width="40" height="34" rx="4"/><rect x="205" y="245" width="40" height="34" rx="4"/>
+        <rect x="395" y="245" width="40" height="34" rx="4"/><rect x="450" y="245" width="40" height="34" rx="4"/>
+        <rect x="150" y="305" width="40" height="34" rx="4"/><rect x="205" y="305" width="40" height="34" rx="4"/>
+        <rect x="395" y="305" width="40" height="34" rx="4"/><rect x="450" y="305" width="40" height="34" rx="4"/>
+        <rect x="300" y="185" width="40" height="34" rx="4"/><rect x="300" y="245" width="40" height="34" rx="4"/>
+        <rect x="58" y="285" width="30" height="30" rx="4"/><rect x="104" y="285" width="30" height="30" rx="4"/>
+        <rect x="58" y="345" width="30" height="30" rx="4"/><rect x="104" y="345" width="30" height="30" rx="4"/>
+        <rect x="498" y="285" width="30" height="30" rx="4"/><rect x="544" y="285" width="30" height="30" rx="4"/>
+        <rect x="498" y="345" width="30" height="30" rx="4"/><rect x="544" y="345" width="30" height="30" rx="4"/>
+      </g>
+      <rect x="268" y="322" width="104" height="14" rx="4" fill="#1b9aa0"/>
+      <rect x="284" y="336" width="72" height="94" rx="6" fill="#134e6f"/>
+      <rect x="291" y="344" width="27" height="86" fill="#86d3d6" opacity=".85"/>
+      <rect x="322" y="344" width="27" height="86" fill="#86d3d6" opacity=".85"/>
+      <!-- plants -->
+      <g fill="#2e9e8f"><ellipse cx="178" cy="420" rx="9" ry="22" transform="rotate(-18 178 420)"/><ellipse cx="192" cy="418" rx="9" ry="24"/><ellipse cx="206" cy="421" rx="9" ry="20" transform="rotate(18 206 421)"/></g>
+      <rect x="170" y="426" width="44" height="22" rx="5" fill="#f0a24a"/>
+      <!-- doctor -->
+      <g>
+        <path d="M168 508 L174 402 Q200 386 226 402 L232 508 Z" fill="#ffffff"/>
+        <path d="M192 396 L208 396 L200 432 Z" fill="#1b9aa0"/>
+        <path d="M190 404 Q186 432 200 438 Q214 432 210 404" fill="none" stroke="#134e6f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="200" cy="442" r="4.5" fill="#134e6f"/>
+        <path d="M172 414 Q158 444 168 474" fill="none" stroke="#ffffff" stroke-width="15" stroke-linecap="round"/>
+        <path d="M228 414 Q246 444 234 468" fill="none" stroke="#ffffff" stroke-width="15" stroke-linecap="round"/>
+        <circle cx="168" cy="478" r="7" fill="#f2c9a5"/><circle cx="234" cy="472" r="7" fill="#f2c9a5"/>
+        <rect x="226" y="448" width="28" height="36" rx="4" fill="#eef3f7" stroke="#9fb4c3" stroke-width="2"/>
+        <path d="M232 458 H248 M232 466 H248 M232 474 H242" stroke="#9fb4c3" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="200" cy="374" r="22" fill="#f2c9a5"/>
+        <path d="M177 372 Q178 347 200 349 Q223 347 223 372 Q215 359 200 359 Q185 359 177 372 Z" fill="#3a2a22"/>
+        <circle cx="192" cy="375" r="2.2" fill="#3a2a22"/><circle cx="208" cy="375" r="2.2" fill="#3a2a22"/>
+        <path d="M192 383 Q200 391 208 383" fill="none" stroke="#9a5646" stroke-width="2.6" stroke-linecap="round"/>
+        <ellipse cx="188" cy="510" rx="11" ry="4.5" fill="#0a2a44"/><ellipse cx="214" cy="510" rx="11" ry="4.5" fill="#0a2a44"/>
+      </g>
+      <!-- nurse -->
+      <g>
+        <path d="M408 508 L414 402 Q440 386 466 402 L472 508 Z" fill="#37b6b0"/>
+        <rect x="412" y="468" width="56" height="40" fill="#2a8f8a"/>
+        <rect x="428" y="414" width="14" height="10" rx="2" fill="#ffffff" opacity=".9"/>
+        <path d="M468 414 Q494 402 494 374" fill="none" stroke="#37b6b0" stroke-width="15" stroke-linecap="round"/>
+        <circle cx="494" cy="366" r="7.5" fill="#c68e63"/>
+        <path d="M412 414 Q400 444 408 474" fill="none" stroke="#37b6b0" stroke-width="15" stroke-linecap="round"/>
+        <circle cx="408" cy="478" r="7" fill="#c68e63"/>
+        <circle cx="440" cy="374" r="22" fill="#c68e63"/>
+        <path d="M417 372 Q418 347 440 349 Q463 347 463 372 Q455 359 440 359 Q425 359 417 372 Z" fill="#241a17"/>
+        <circle cx="440" cy="341" r="10" fill="#241a17"/>
+        <circle cx="432" cy="375" r="2.2" fill="#241a17"/><circle cx="448" cy="375" r="2.2" fill="#241a17"/>
+        <path d="M432 383 Q440 391 448 383" fill="none" stroke="#7a3f34" stroke-width="2.6" stroke-linecap="round"/>
+        <ellipse cx="428" cy="510" rx="11" ry="4.5" fill="#0a2a44"/><ellipse cx="454" cy="510" rx="11" ry="4.5" fill="#0a2a44"/>
+      </g>
+    </svg>
+  </aside>
+
+  <!-- Right: sign-in panel -->
+  <main class="auth-panel">
+    <div class="auth-card">
+      <div class="card-brand"><span class="logo-mark small">+</span> Smart Hospital</div>
+      <h1>Welcome back</h1>
+      <p class="sub">Choose how you are signing in, then enter your details.</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="auth-flash {{ category }}" role="alert">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="post" novalidate>
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+
+        <div class="role-label" id="role-label">Sign in as</div>
+        <div class="role-grid" role="radiogroup" aria-labelledby="role-label">
+          {% for value, label in roles %}
+          <label class="role">
+            <input type="radio" name="role" value="{{ value }}" {% if value == selected %}checked{% endif %} required>
+            <span class="role-card">
+              <span class="ico {{ value }}">
+                {% if value == 'patient' %}
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.6-4 3.6-6 7.5-6s6.9 2 7.5 6"/></svg>
+                {% elif value == 'doctor' %}
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6a4 4 0 0 0 8 0V3"/><path d="M10 13v2a4.5 4.5 0 0 0 9 0v-1.5"/><circle cx="19" cy="11.5" r="2"/></svg>
+                {% else %}
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8-7.5 9.5-4.3-1.5-7.5-4.9-7.5-9.5V6L12 3z"/><path d="M8.8 12l2.3 2.3 4.2-4.5"/></svg>
+                {% endif %}
+              </span>
+              <span class="rname">{{ label }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+
+        <div class="field">
+          <input id="email" type="email" name="email" placeholder=" " required autocomplete="username" autofocus>
+          <label for="email">Email address</label>
+        </div>
+        <div class="field">
+          <input id="password" type="password" name="password" placeholder=" " required autocomplete="current-password">
+          <label for="password">Password</label>
+          <button type="button" class="reveal" id="reveal" aria-label="Show password">Show</button>
+        </div>
+
+        <button class="signin" type="submit">Sign In</button>
+      </form>
+
+      <p class="register-line" id="register-line">New patient? <a href="{{ url_for('register') }}">Create an account</a></p>
+    </div>
+  </main>
 </div>
+
 <script>
-  // The registration link only makes sense for patients.
   var line = document.getElementById("register-line");
   function updateRegisterLine() {
     var chosen = document.querySelector('input[name="role"]:checked');
@@ -35,5 +165,15 @@
     r.addEventListener("change", updateRegisterLine);
   });
   updateRegisterLine();
+
+  var pw = document.getElementById("password");
+  var reveal = document.getElementById("reveal");
+  reveal.addEventListener("click", function () {
+    var hidden = pw.type === "password";
+    pw.type = hidden ? "text" : "password";
+    reveal.textContent = hidden ? "Hide" : "Show";
+    reveal.setAttribute("aria-label", hidden ? "Hide password" : "Show password");
+  });
 </script>
-{% endblock %}
+</body>
+</html>

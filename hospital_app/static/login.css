@@ -1,0 +1,93 @@
+/* Smart Hospital: sign-in page */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body.auth-body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #1d2b36; background: #f4f7f9; }
+
+.auth-wrap { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
+
+/* ---------- left: illustration panel ---------- */
+.auth-art { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 40px 48px 0;
+  color: #fff; background: linear-gradient(155deg, #0b2545 0%, #10456a 48%, #1b9aa0 100%); }
+.auth-art::before { content: ""; position: absolute; width: 520px; height: 520px; right: -180px; top: -160px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.16), rgba(255,255,255,0) 70%); }
+.art-brand { position: relative; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.15rem; letter-spacing: .2px; }
+.logo-mark { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 1.4rem; line-height: 1;
+  font-weight: 700; color: #fff; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); }
+.logo-mark.small { width: 30px; height: 30px; font-size: 1.2rem; color: #fff; background: linear-gradient(135deg, #1fb5a8, #2f7bd9); border: 0; }
+.art-copy { position: relative; max-width: 440px; margin-top: 8vh; }
+.art-copy h2 { margin: 0 0 12px; font-size: 2.1rem; line-height: 1.2; font-weight: 700; }
+.art-copy p { margin: 0; font-size: 1.05rem; line-height: 1.6; color: rgba(255,255,255,.82); }
+.glass-chip { position: absolute; display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; font-size: .9rem; font-weight: 600;
+  color: #fff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(5, 20, 40, .18); }
+.glass-chip svg { color: #7ee3d4; }
+.chip-a { right: 8%; top: 36%; }
+.chip-b { left: 6%; top: 46%; }
+.art-scene { position: relative; display: block; overflow: visible; margin-top: auto; align-self: center;
+  width: min(100%, calc((100vh - 300px) * 1.23)); height: auto; }
+
+/* ---------- right: sign-in panel ---------- */
+.auth-panel { display: grid; place-items: center; padding: 32px 24px; background: #f4f7f9; }
+.auth-card { width: 100%; max-width: 440px; padding: 36px 36px 30px; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+.card-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: #16324f; margin-bottom: 22px; }
+.auth-card h1 { margin: 0 0 6px; font-size: 1.7rem; color: #16324f; }
+.auth-card .sub { margin: 0 0 22px; color: #6b7a89; }
+
+.auth-flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: .92rem; border: 1px solid; }
+.auth-flash.error { background: #fdecec; border-color: #f2b4b4; color: #8a1f1f; }
+.auth-flash.success { background: #e7f6ec; border-color: #9ad3ae; color: #1b5e34; }
+
+/* role selector */
+.role-label { font-size: .85rem; font-weight: 600; color: #4b5b6b; margin-bottom: 8px; }
+.role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.role { margin: 0; cursor: pointer; }
+.role input { position: absolute; opacity: 0; pointer-events: none; }
+.role-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 6px 12px;
+  border: 1.5px solid #e1e8ee; border-radius: 12px; background: #fff; transition: border-color .15s, background .15s, box-shadow .15s, transform .15s; }
+.role:hover .role-card { border-color: #b7c4d2; transform: translateY(-1px); }
+.ico { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; }
+.ico.patient { background: #dcf3ee; color: #2a9d8f; }
+.ico.doctor { background: #e3ebfb; color: #4a6fc2; }
+.ico.admin { background: #fdebd9; color: #d4832e; }
+.rname { font-size: .9rem; font-weight: 600; color: #3b4a59; }
+.role input:checked + .role-card { border-color: #4f6d8f; background: #f1f5fa; box-shadow: 0 0 0 3px rgba(79, 109, 143, .16); }
+.role input:checked + .role-card .rname { color: #3f5d80; }
+.role input:checked + .role-card::after { content: ""; position: absolute; top: 7px; right: 7px; width: 14px; height: 14px; border-radius: 50%;
+  background: #4f6d8f url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 9px no-repeat; }
+.role input:focus-visible + .role-card { outline: 2px solid #3b82c4; outline-offset: 2px; }
+
+/* floating-label fields */
+.field { position: relative; margin-bottom: 16px; }
+.field input { width: 100%; padding: 24px 16px 9px; font: inherit; font-size: 1rem; color: #1d2b36; background: #fff;
+  border: 1.5px solid #d6dde4; border-radius: 8px; outline: none; transition: border-color .15s, box-shadow .15s; }
+.field label { position: absolute; left: 17px; top: 17px; margin: 0; font-size: 1rem; font-weight: 400; color: #7a8896; pointer-events: none;
+  transition: top .15s, font-size .15s, color .15s; }
+.field input:focus { border-color: #3b82c4; box-shadow: 0 0 0 3px rgba(59, 130, 196, .15); }
+.field input:focus + label, .field input:not(:placeholder-shown) + label { top: 8px; font-size: .74rem; font-weight: 600; color: #3b6ea5; }
+.reveal { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); padding: 4px 8px; border: 0; border-radius: 6px;
+  background: transparent; color: #3b6ea5; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; }
+.reveal:hover { background: #eef3f8; }
+.field input[type="password"], .field input#password { padding-right: 62px; }
+
+/* sign-in button */
+.signin { width: 100%; margin-top: 6px; padding: 14px 18px; font: inherit; font-size: 1.05rem; font-weight: 700; color: #fff; cursor: pointer;
+  border: 0; border-radius: 12px; background: linear-gradient(135deg, #17b3a3, #2f7bd9); box-shadow: 0 8px 18px rgba(47, 123, 217, .28);
+  transition: transform .12s, box-shadow .12s, filter .12s; }
+.signin:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(47, 123, 217, .34); filter: brightness(1.04); }
+.signin:active { transform: translateY(0); }
+.register-line { margin: 20px 0 0; text-align: center; color: #6b7a89; font-size: .95rem; }
+.register-line a { color: #2f6fb4; font-weight: 600; text-decoration: none; }
+.register-line a:hover { text-decoration: underline; }
+
+/* ---------- smaller screens ---------- */
+@media (max-width: 900px) {
+  .auth-wrap { grid-template-columns: 1fr; }
+  .auth-art { padding: 24px 24px 0; min-height: 0; }
+  .art-copy, .glass-chip, .art-scene, .card-brand { display: none; }
+  .auth-art { padding-bottom: 24px; }
+  .auth-panel { align-items: start; padding-top: 24px; }
+}
+@media (max-width: 440px) {
+  .auth-card { padding: 28px 20px 24px; }
+  .role-grid { gap: 8px; }
+}

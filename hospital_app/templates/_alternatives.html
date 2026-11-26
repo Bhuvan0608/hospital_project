@@ -1,0 +1,52 @@
+<h3>{% if want %}{{ this.full_name }} is not available at {{ want_label }} on {{ day|date_nice }}{% else %}{{ this.full_name }} is not available on {{ day|date_nice }}{% endif %}</h3>
+<p class="muted">{{ why_text }}</p>
+
+{% macro choices(groups) %}
+<ul class="alt-list">
+  {% for g in groups %}
+  <li>
+    <div class="alt-name"><strong>{{ g.doctor.full_name }}</strong>
+      <span class="muted">{{ g.doctor.department }}</span>
+      {% if g.same_dept %}<span class="tag">Same department</span>{% endif %}</div>
+    <div class="alt-slots">
+      {% for s in g.slots %}
+      <form method="post" action="{{ url_for('book', doctor_id=g.doctor.doctor_id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="date" value="{{ day.isoformat() }}">
+        <input type="hidden" name="slot" value="{{ s.value }}">
+        <button class="btn small" type="submit">Book {{ s.label }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{% if exact %}
+  <h4>{% if want %}Other doctors free at {{ want_label }}{% else %}Doctors available on {{ day|date_nice }}{% endif %}</h4>
+  {{ choices(exact) }}
+{% endif %}
+
+{% if nearby %}
+  <h4>Closest times with other doctors</h4>
+  {{ choices(nearby) }}
+{% endif %}
+
+{% if same_doc %}
+  <h4>{{ this.full_name }}'s nearest free times that day</h4>
+  <div class="alt-slots">
+    {% for s in same_doc %}
+    <form method="post" action="{{ url_for('book', doctor_id=this.doctor_id) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}">
+      <input type="hidden" name="slot" value="{{ s.value }}">
+      <button class="btn small secondary" type="submit">Book {{ s.label }}</button>
+    </form>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if not exact and not nearby and not same_doc %}
+  <p>No other doctor is free around this time. Please try another date.</p>
+{% endif %}
