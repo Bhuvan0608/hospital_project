@@ -6,3 +6,5 @@ hospital_app/config.py
 data/
 outputs/
 hospital_app/hospital_app/
+
+*.pptx
